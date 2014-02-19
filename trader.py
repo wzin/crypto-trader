@@ -1,11 +1,15 @@
-import sys
-sys.path.append("/Users/wojtek/Sources/btce-bot/")
-sys.path.append("/Users/wojtek/Sources/btce-api/")
-import btceapi
-import sqlalchemy as sa
 import os
+import sys
+
+sys.path.append("/Users/wojtek/Sources/btce-api/")
+
+import btceapi
 
 from decorators import debug
+import sqlalchemy as sa
+
+
+
 
 class Secrets:
     key='3VHY49XV-915CL848-ZL4GZZRW-U0IMFDLY-CHSQTXK0'
@@ -56,21 +60,55 @@ class Database():
             i.execute({'symbol' : 'USD', 'name' : 'United States Dollar'},
                       {'symbol' : 'BTC', 'name' : 'Bitcoin'},
                       {'symbol' : 'LTC', 'name' : 'Litecoin'},
-                      {'symbol' : 'DOGE', 'name' : 'Dogecoin'},
                       {'symbol' : 'PPC', 'name' : 'Peercoin'},
                       {'symbol' : 'FTC', 'name' : 'Feathercoin'},
+                      {'symbol' : 'NMC', 'name' : 'Namecoin'}
                       )
             print "...done creating tables"
 
     def get_db(self):
         return self.db
 
+class CurrencyPair:
+    ''' Return currency pair cost of conversion with respect to fee '''
+    def __init__(self, currency_from, currency_to, cost):
+        self.pair = {'from' : currency_from,
+                     'to'   : currency_to,
+                     'cost' : cost}
+    def refresh(self):
+        ''' Tell api to refresh values '''
+        pass
+    
+    def data(self):
+        return self.pair
+
 class TradeGraph:
     ''' 
     - TradeGraph should keep the graph of currency pairs with all transition costs
-    - TradeGraph should propose transaction
+    - TradeGraph should propose profitable transaction chains
+        * example transaction triad : ['ltc_btc', 'btc_ftc', 'ftc_ltc']
+    - TradeGraph should be initialized with dictionary of pair costs
     '''
-    def __init__(self, market):
+    def __init__(self, pairs_exchange_rates, graph_depth, trade_fee):
+        self.pairs_exchange_rates = [ CurrencyPair('ltc','usd', 15.42).data(),
+                                      CurrencyPair('btc','usd', 612.19).data(),
+                                      CurrencyPair('ppc','usd', 4.017).data(),
+                                      CurrencyPair('nmc','usd', 3.737).data(),
+                                      CurrencyPair('ftc','btc', 0.0004).data(),
+                                      CurrencyPair('ltc','btc', 0.02512).data(),
+                                      CurrencyPair('nmc','btc', 0.00606).data(),
+                                      CurrencyPair('ppc','btc', 0.00651).data()
+                                      ]
+        self.graph = self.init_graph(graph_depth)                                                   
+        self.trade_fee = 0.02
+        self.graph_depth = 5
+    
+    def init_graph(self, graph_depth):
+        ''' find all permutations of compatible transitions - length should be equal to graph_depth'''
+        pass
+    
+    def refresh_graph(self):
+        ''' Iterate through thru all CurrencyPairs and refresh pair cost'''
         pass
     
 class MarketKnowledge:

@@ -2,13 +2,8 @@ import sys
 sys.path.append("/Users/wojtek/Sources/btce-bot/")
 sys.path.append("/Users/wojtek/Sources/btce-api/")
 import btceapi
-import btcebot
 import sqlalchemy as sa
 import os
-import threading
-import datetime
-import time
-import traceback
 
 from decorators import debug
 
@@ -70,6 +65,14 @@ class Database():
     def get_db(self):
         return self.db
 
+class TradeGraph:
+    ''' 
+    - TradeGraph should keep the graph of currency pairs with all transition costs
+    - TradeGraph should propose transaction
+    '''
+    def __init__(self, market):
+        pass
+    
 class MarketKnowledge:
     '''
     - Knowledge should be able to access database but leave
@@ -81,7 +84,8 @@ class MarketKnowledge:
         self.db = self.init_database()
         self.trade_api = self.init_trade_api()
         self.all_currencies = btceapi.all_currencies
-
+        self.graph = TradeGraph()
+        
     def __repr__(self):
         return str(self.handler)
 
@@ -98,27 +102,46 @@ class MarketKnowledge:
         except Exception, e:
             print "Could not initialize API because %s" % e
             raise
-
-    def get_depth(pair):
+    @debug
+    def get_pair_depth(self, pair):
         ''' Returns asks and bids '''
-        pass
+        asks, bids = btceapi.getDepth(pair)
+        ask_prices, ask_volumes = zip(*asks)
+        bid_prices, bid_volumes = zip(*bids)
+        pair_depth = {pair: {'ask_prices': ask_prices,
+                             'ask_volumes': ask_volumes,
+                             'bid_prices': bid_prices, 
+                             'bid_volumes' : bid_volumes
+                             }
+                      }
+        return pair_depth
+    
+    def get_all_depth(self):
+        all_pairs_depth = {}
+        for pair in btceapi.all_pairs:
+            pair_depth = self.get_pair_depth(pair)
+            all_pairs_depth[pair] = pair_depth
+        return all_pairs_depth
 
-    def get_ticker(pair):
+    def get_ticker(self, pair):
         ''' Returns high, low, avg, etc '''
         pass
 
-    def get_trade_fee(pair):
+    def get_trade_fee(self, pair):
         ''' Returns exchange's trade fee '''
         pass
 
     def get_info(self):
+        ''' Returns dictionary that contains all needed data '''
         r = self.trade_api.getInfo(connection = self.api_connection)
         balances = self.get_balances(r)
         open_orders = self.get_open_orders()
         transaction_history_count = self.get_transaction_history_count(r)
+        market_depth = self.get_all_depth()
         info = {'balances' : balances,
                 'open_orders' : open_orders,
                 'transaction_history_count' : transaction_history_count,
+                'market_depth' : market_depth
                 }
         return info
 
@@ -147,7 +170,7 @@ class MarketKnowledge:
             balance = getattr(r, "balance_" + currency)
             balances[currency.upper()] = balance
         return balances
-
+    
 class Trader():
     '''
     - Trader should receive currencies to trade with from database
@@ -161,6 +184,7 @@ class Trader():
     '''
     def __init__(self, key_file):
         self.market = MarketKnowledge(key_file)
+        self.trade_pairs =  TradeGraph().trade_pairs
 
     def trade(self):
         print self.market.get_info()

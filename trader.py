@@ -1,8 +1,9 @@
 import os
 import sys
+from pygraph.classes.graph import graph
+from pygraph.readwrite.dot import write
 
 sys.path.append("/Users/wojtek/Sources/btce-api/")
-
 import btceapi
 
 from decorators import debug
@@ -89,27 +90,104 @@ class TradeGraph:
         * example transaction triad : ['ltc_btc', 'btc_ftc', 'ftc_ltc']
     - TradeGraph should be initialized with dictionary of pair costs
     '''
-    def __init__(self, pairs_exchange_rates, graph_depth, trade_fee):
-        self.pairs_exchange_rates = [ CurrencyPair('ltc','usd', 15.42).data(),
-                                      CurrencyPair('btc','usd', 612.19).data(),
-                                      CurrencyPair('ppc','usd', 4.017).data(),
-                                      CurrencyPair('nmc','usd', 3.737).data(),
-                                      CurrencyPair('ftc','btc', 0.0004).data(),
-                                      CurrencyPair('ltc','btc', 0.02512).data(),
-                                      CurrencyPair('nmc','btc', 0.00606).data(),
-                                      CurrencyPair('ppc','btc', 0.00651).data()
-                                      ]
-        self.graph = self.init_graph(graph_depth)                                                   
+    def __init__(self, pairs_rates):
         self.trade_fee = 0.02
-        self.graph_depth = 5
+        self.graph_depth = 5 
+        self.pairs_rates = pairs_rates
+        self.graph = graph()
+        self.trade_graph = self.init_graph()
+        self.path = self.paths_from_to(self.graph, "nvc", "trc")  
+        print "Paths: %s"  % str(self.path)                                       
     
-    def init_graph(self, graph_depth):
-        ''' find all permutations of compatible transitions - length should be equal to graph_depth'''
-        pass
+    def __repr__(self):
+        return self.graph
+        
+    def init_graph(self):
+        ''' Returns graph where nodes are currencies and edges are exchange rates'''
+        self.add_nodes()
+        self.add_edges()
+        self.add_edges_attributes()
+        self.draw_graph()
+    
+    def draw_graph(self):
+        dot = write(self.graph)
+        f = open('currencies.dot', 'a')
+        f.write(dot)
+        f.close()
+        command = '/usr/local/bin/dot -Tpng currencies.dot > currencies.png'
+        print "Generating graph with %s" % command
+        os.system(command)
+        
+        
+    def add_nodes(self):
+        ''' adds nodes to trade graph '''
+        try:
+            self.graph.add_nodes(list(btceapi.all_currencies))
+            return True
+        except Exception, e:
+            print "Could not add nodes to tradegraph: %s" % e
+            raise
+            
+    def all_edges(self):
+        ''' returns tuples of currency pairs '''
+        return [tuple(i.split('_')) for i in btceapi.all_pairs]
+
+    def add_edges(self):
+        ''' Adds edges to trade graph '''
+        try:
+            for edge in self.all_edges():
+                self.graph.add_edge(edge)
+            return True
+        except Exception, e:
+            print "Could not add edges to trade graph: %s" % e
+            raise
+
+    def add_edges_attributes(self):
+        ''' Ads attributes to trade graph '''
+        try:
+            for rate in self.pairs_rates:
+                edge = tuple(rate[0].split("_"))
+                edge_attribute_1 = tuple([edge[0], rate[1]])
+                edge_attribute_2 = tuple([edge[1], 1/rate[1]])
+                self.graph.add_edge_attribute(edge,(edge_attribute_1))
+                self.graph.add_edge_attribute(edge,(edge_attribute_2))
+                self.graph.add_edge_attribute(edge,("label",rate[1]))
+        except Exception, e:
+            print "Could not add attributes to edges: %s" % e
+            raise
     
     def refresh_graph(self):
         ''' Iterate through thru all CurrencyPairs and refresh pair cost'''
         pass
+    
+    def get_graph(self):
+        return self.graph
+    
+    def adjlist_find_paths(self, a, n, m, path=[]):
+        '''Find paths from node index n to m using adjacency list a.'''
+        path = path + [n]
+        if n == m:
+            return [path]
+        paths = []
+        for child in a[n]:
+            if child not in path:
+                child_paths = self.adjlist_find_paths(a, child, m, path)
+                for child_path in child_paths:
+                    paths.append(child_path)
+        return paths
+
+    def paths_from_to(self, graph, source, dest):
+        '''Find paths in graph from vertex source to vertex dest.'''
+        a = graph.node_neighbors
+        n = source
+        m = dest
+        return self.adjlist_find_paths(a, n, m)
+    
+    def find_all_flows(self):
+        pass
+    
+  
+  
     
 class MarketKnowledge:
     '''
@@ -122,11 +200,25 @@ class MarketKnowledge:
         self.db = self.init_database()
         self.trade_api = self.init_trade_api()
         self.all_currencies = btceapi.all_currencies
-        self.graph = TradeGraph()
+        self.pairs_rates = self.init_pairs_rates()
+        self.graph = TradeGraph(self.pairs_rates).get_graph()
         
     def __repr__(self):
         return str(self.handler)
-
+    
+    @debug
+    def init_pairs_rates(self):
+        ''' Returns list of tuples containing (pair <string>, rate <float>)'''
+        try:
+            pairs_rates = []
+            for pair in btceapi.all_pairs:
+                rate = btceapi.getTicker(pair).avg
+                pairs_rates.append((pair, rate))
+            return pairs_rates
+        except Exception, e:
+            print "Could not produce pairs rates: %s" % e
+            raise
+    
     def init_database(self):
         db = Database().get_db()
         return db
@@ -140,6 +232,7 @@ class MarketKnowledge:
         except Exception, e:
             print "Could not initialize API because %s" % e
             raise
+    
     @debug
     def get_pair_depth(self, pair):
         ''' Returns asks and bids '''
@@ -209,6 +302,9 @@ class MarketKnowledge:
             balances[currency.upper()] = balance
         return balances
     
+    def get_graph(self):
+        return self.graph
+    
 class Trader():
     '''
     - Trader should receive currencies to trade with from database
@@ -222,12 +318,15 @@ class Trader():
     '''
     def __init__(self, key_file):
         self.market = MarketKnowledge(key_file)
-        self.trade_pairs =  TradeGraph().trade_pairs
+        self.graph = self.market.get_graph()
+        #self.trade_pairs =  TradeGraph().trade_pairs
 
     def trade(self):
-        print self.market.get_info()
+        print self.graph
+        #pass
 
 if __name__ == "__main__":
-    print "Launching trader with key file %s" % sys.argv[1]
-    t = Trader(sys.argv[1])
-    t.trade()
+    if len(sys.argv) > 0:
+        print "Launching trader with key file %s" % sys.argv[1]
+        t = Trader(sys.argv[1])
+        t.trade()

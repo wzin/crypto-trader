@@ -2,4 +2,7 @@
 .project
 .pydevproject
 *.db
+*.dot
+*.png
+.DS_Store
 key.txt

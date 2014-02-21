@@ -2,14 +2,13 @@ import os
 import sys
 from pygraph.classes.graph import graph
 from pygraph.readwrite.dot import write
+from  pygraph.algorithms.cycles import find_cycle
 
 sys.path.append("/Users/wojtek/Sources/btce-api/")
 import btceapi
 
 from decorators import debug
 import sqlalchemy as sa
-
-
 
 
 class Secrets:
@@ -184,10 +183,60 @@ class TradeGraph:
         return self.adjlist_find_paths(a, n, m)
     
     def find_all_flows(self):
-        pass
+        pass  
     
-  
-  
+    def find_cycle_to_ancestor(self, spanning_tree, node, ancestor):
+        """
+        Find a cycle containing both node and ancestor.
+        """
+        path = []
+        while (node != ancestor):
+            if node is None:
+                return []
+            path.append(node)
+            node = spanning_tree[node]
+        path.append(node)
+        path.reverse()
+        return path
+    
+    def find_all_cycles(self):
+        """
+        Find all cycles in the given graph.
+    
+        This function will return a list of lists of nodes, which form cycles in the
+        graph or an empty list if no cycle exists.
+        """
+    
+        def dfs(node):
+            """
+            Depth-first search subfunction.
+            """
+            visited.add(node)
+            # Explore recursively the connected component
+            for each in self.graph[node]:
+                if each not in visited:
+                    spanning_tree[each] = node
+                    dfs(each)
+                else:
+                    if (spanning_tree[node] != each):
+                        cycle = self.find_cycle_to_ancestor(spanning_tree, node, each)
+                        if cycle:
+                            cycles.append(cycle)
+    
+        visited = set()         # List for marking visited and non-visited nodes
+        spanning_tree = {}      # Spanning tree
+        cycles = []
+    
+        # Algorithm outer-loop
+        for each in self.graph:
+            # Select a non-visited node
+            if each not in visited:
+                spanning_tree[each] = None
+                # Explore node's connected component
+                dfs(each)
+
+        return cycles
+
     
 class MarketKnowledge:
     '''
@@ -202,6 +251,7 @@ class MarketKnowledge:
         self.all_currencies = btceapi.all_currencies
         self.pairs_rates = self.init_pairs_rates()
         self.graph = TradeGraph(self.pairs_rates).get_graph()
+        self.all_cycles = TradeGraph(self.pairs_rates).find_all_cycles()
         
     def __repr__(self):
         return str(self.handler)
@@ -305,6 +355,11 @@ class MarketKnowledge:
     def get_graph(self):
         return self.graph
     
+    def get_cycles(self):
+        return self.all_cycles
+    
+
+    
 class Trader():
     '''
     - Trader should receive currencies to trade with from database
@@ -319,10 +374,14 @@ class Trader():
     def __init__(self, key_file):
         self.market = MarketKnowledge(key_file)
         self.graph = self.market.get_graph()
+        self.cycles = self.market.get_cycles()
         #self.trade_pairs =  TradeGraph().trade_pairs
 
     def trade(self):
+        print "Graph"
         print self.graph
+        print "Cycles"
+        print self.cycles
         #pass
 
 if __name__ == "__main__":
